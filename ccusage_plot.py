@@ -247,7 +247,6 @@ def get_user_plan():
             with open(creds_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 
-                
                 # Check inside claudeAiOauth
                 if not plan and "claudeAiOauth" in data:
                     plan = data["claudeAiOauth"].get("subscriptionType")
