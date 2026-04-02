@@ -1,16 +1,16 @@
-# ccusage-plot
+# 📊 ccusage-plot
 
 A dark-themed CLI tool that visualizes your Claude Code token usage and costs by reading local conversation logs (`~/.claude/projects/**/*.jsonl`).
 
-Generates a PNG dashboard with per-segment bar charts, cumulative lines, cost-by-model breakdown, and token category breakdown.
+![demo](demo.png)
 
-## Quick Start
+## ⚡ Quick Start
 
 ```bash
 python3 -m pip install matplotlib && curl -s https://raw.githubusercontent.com/nhz-io/ccusage-plot/main/ccusage_plot.py | python3 - -p 7d --tz PST
 ```
 
-## Requirements
+## 📋 Requirements
 
 - Python 3.9+
 - `matplotlib`
@@ -19,7 +19,7 @@ python3 -m pip install matplotlib && curl -s https://raw.githubusercontent.com/n
 pip install matplotlib
 ```
 
-## Usage
+## 🚀 Usage
 
 ```bash
 python ccusage_plot.py [options]
@@ -37,7 +37,7 @@ python ccusage_plot.py [options]
 | `--tz` | Timezone for x-axis and date parsing (`PST`, `EST`, `UTC`, `Asia/Tokyo`, etc.) | UTC |
 | `--highlight` | Highlight a daily time window, e.g. `5-11` or `5:00-11:30` | none |
 
-### Date Range
+### 📅 Date Range
 
 You can specify what time window to plot in several ways:
 
@@ -78,7 +78,7 @@ python ccusage_plot.py -p 2w --tz EST --highlight 9-17 -o usage.png
 python ccusage_plot.py -p 3m
 ```
 
-## Charts
+## 🎨 Charts
 
 The output PNG contains 8 panels:
 
@@ -93,7 +93,7 @@ The output PNG contains 8 panels:
 
 Time segments are auto-sized to maintain consistent bar density (~120 bars), snapping to clean intervals (1min, 5min, 15min, 1h, 4h, 12h, 1d, 1w, 30d).
 
-## Supported Models
+## 🤖 Supported Models
 
 Cost estimation uses published pricing for:
 
@@ -103,6 +103,6 @@ Cost estimation uses published pricing for:
 
 Unknown models fall back to Sonnet-tier pricing.
 
-## License
+## 📄 License
 
 MIT
