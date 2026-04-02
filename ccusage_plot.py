@@ -281,7 +281,7 @@ def _get_plan_from_credentials():
 
 def get_claude_info():
     """Get subscription type and version from the claude CLI, with credentials.json fallback."""
-    plan = "Unknown"
+    plan = ""
     version = ""
     try:
         result = subprocess.run(
@@ -405,7 +405,9 @@ def plot_timeline(events, period_str, output_path, tz=None, highlight=None):
     # Get plan and version info
     plan_name, claude_version = get_claude_info()
 
-    title_parts = [f"Claude Code Usage | Plan: {plan_name}"]
+    title_parts = ["Claude Code Usage"]
+    if plan_name:
+        title_parts.append(f"Plan: {plan_name}")
     if claude_version:
         title_parts.append(f"v{claude_version.split()[0]}")
     fig.suptitle(
