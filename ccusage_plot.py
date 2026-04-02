@@ -650,8 +650,45 @@ def plot_timeline(events, period_str, output_path, tz=None, highlight=None):
 SCRIPT_URL = "https://raw.githubusercontent.com/nhz-io/ccusage-plot/main/ccusage_plot.py"
 
 
-def check_update():
+def _resolve_script_path():
+    """Find the real path of this script, resolving symlinks and verifying identity."""
+    # __file__ may be relative, a symlink, or a .pyc — resolve it
+    candidate = Path(__file__).resolve()
+
+    # If running via stdin (curl pipe), __file__ won't be a real path
+    if not candidate.is_file():
+        return None
+
+    # Follow symlinks to the actual file
+    real = candidate
+    while real.is_symlink():
+        real = real.resolve()
+
+    # Verify this is actually our script by checking for our version string
+    try:
+        content = real.read_text(encoding="utf-8")
+        if f'__version__ = "{__version__}"' not in content:
+            return None
+    except Exception:
+        return None
+
+    return real
+
+
+def check_update(target_path=None):
     """Check for a newer version and auto-update if available."""
+    script_path = Path(target_path).resolve() if target_path else _resolve_script_path()
+
+    if script_path is None:
+        print(
+            "Error: cannot determine script location (running via pipe?).\n"
+            "Use: --update /path/to/ccusage_plot.py",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"Script location: {script_path}", file=sys.stderr)
+
     try:
         with urllib.request.urlopen(SCRIPT_URL, timeout=10) as resp:
             remote_source = resp.read().decode("utf-8")
@@ -671,11 +708,10 @@ def check_update():
         sys.exit(0)
 
     # Update in place
-    script_path = Path(__file__).resolve()
     try:
+        mode = script_path.stat().st_mode
         script_path.write_text(remote_source, encoding="utf-8")
-        # Preserve executable bit
-        script_path.chmod(script_path.stat().st_mode | 0o111)
+        script_path.chmod(mode | 0o111)
         print(f"Updated: v{__version__} -> v{remote_version}", file=sys.stderr)
     except Exception as e:
         print(f"Error writing update: {e}", file=sys.stderr)
@@ -693,8 +729,11 @@ def main():
     )
     parser.add_argument(
         "--update",
-        action="store_true",
-        help="Auto-update to the latest version from GitHub",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="PATH",
+        help="Auto-update to the latest version from GitHub. Optionally specify script path.",
     )
     parser.add_argument(
         "-p",
@@ -734,8 +773,9 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.update:
-        check_update()
+    if args.update is not None:
+        target = None if args.update is True else args.update
+        check_update(target_path=target)
         sys.exit(0)
 
     tz = resolve_tz(args.tz) if args.tz else None

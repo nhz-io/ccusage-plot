@@ -37,7 +37,7 @@ python ccusage_plot.py [options]
 | `--tz` | Timezone for x-axis and date parsing (`PST`, `EST`, `UTC`, `Asia/Tokyo`, etc.) | UTC |
 | `--highlight` | Highlight a daily time window, e.g. `5-11` or `5:00-11:30` | none |
 | `-v`, `--version` | Show version and exit | |
-| `--update` | Auto-update to the latest version from GitHub | |
+| `--update [PATH]` | Auto-update from GitHub. Optionally specify script path. | |
 
 ### 📅 Date Range
 
