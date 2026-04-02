@@ -266,15 +266,19 @@ def get_user_plan():
             with open(creds_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 
-                # Check inside claudeAiOauth
+                # 1. First, try to get it from the top level.
+                plan = data.get("subscriptionType")
+                
+                # 2. If it wasn't there, check inside claudeAiOauth.
                 if not plan and "claudeAiOauth" in data:
                     plan = data["claudeAiOauth"].get("subscriptionType")
                 
                 if plan:
                     return str(plan).upper()
-        except Exception:
+        except Exception as e:
             pass
-    return "Free" # A generic fallback - as Free users can't use the CLI I don't think this is necessary.
+            
+    return "FREE" # A generic fallback - as Free users can't use the CLI I don't think this is necessary.
 
 HIGHLIGHT_COLOR = "#ffffff"
 HIGHLIGHT_ALPHA = 0.06
