@@ -259,8 +259,25 @@ def resolve_tz(tz_str):
         )
         sys.exit(1)
 
+def _get_plan_from_credentials():
+    """Fallback: read subscription type from .credentials.json (Windows)."""
+    creds_path = Path.home() / ".claude" / ".credentials.json"
+    if creds_path.exists():
+        try:
+            with open(creds_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                plan = None
+                if "claudeAiOauth" in data:
+                    plan = data["claudeAiOauth"].get("subscriptionType")
+                if plan:
+                    return str(plan).capitalize()
+        except Exception:
+            pass
+    return None
+
+
 def get_claude_info():
-    """Get subscription type and version from the claude CLI."""
+    """Get subscription type and version from the claude CLI, with credentials.json fallback."""
     plan = "Unknown"
     version = ""
     try:
@@ -273,7 +290,10 @@ def get_claude_info():
         if p:
             plan = str(p).capitalize()
     except (subprocess.SubprocessError, json.JSONDecodeError, FileNotFoundError):
-        pass
+        # CLI not available (common on Windows), fall back to credentials file
+        creds_plan = _get_plan_from_credentials()
+        if creds_plan:
+            plan = creds_plan
     try:
         result = subprocess.run(
             ["claude", "--version"],
