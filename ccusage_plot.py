@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Plot Claude Code usage data by reading local conversation logs directly."""
 
+__version__ = "1.0.0"
+
 import argparse
 import json
 import os
 import re
 import subprocess
 import sys
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -644,9 +647,54 @@ def plot_timeline(events, period_str, output_path, tz=None, highlight=None):
     print(f"Saved: {output_path}", file=sys.stderr)
 
 
+SCRIPT_URL = "https://raw.githubusercontent.com/nhz-io/ccusage-plot/main/ccusage_plot.py"
+
+
+def check_update():
+    """Check for a newer version and auto-update if available."""
+    try:
+        with urllib.request.urlopen(SCRIPT_URL, timeout=10) as resp:
+            remote_source = resp.read().decode("utf-8")
+    except Exception as e:
+        print(f"Error checking for updates: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Extract remote version
+    m = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', remote_source, re.MULTILINE)
+    if not m:
+        print("Error: could not determine remote version.", file=sys.stderr)
+        sys.exit(1)
+
+    remote_version = m.group(1)
+    if remote_version == __version__:
+        print(f"Already up to date (v{__version__}).", file=sys.stderr)
+        sys.exit(0)
+
+    # Update in place
+    script_path = Path(__file__).resolve()
+    try:
+        script_path.write_text(remote_source, encoding="utf-8")
+        # Preserve executable bit
+        script_path.chmod(script_path.stat().st_mode | 0o111)
+        print(f"Updated: v{__version__} -> v{remote_version}", file=sys.stderr)
+    except Exception as e:
+        print(f"Error writing update: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Plot Claude Code usage from local conversation logs"
+    )
+    parser.add_argument(
+        "-v", "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Auto-update to the latest version from GitHub",
     )
     parser.add_argument(
         "-p",
@@ -685,6 +733,10 @@ def main():
         help="Highlight a daily time window, e.g. 5-11 or 5:00-11:30 (uses --tz)",
     )
     args = parser.parse_args()
+
+    if args.update:
+        check_update()
+        sys.exit(0)
 
     tz = resolve_tz(args.tz) if args.tz else None
 
