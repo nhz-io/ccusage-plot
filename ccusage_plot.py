@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Plot Claude Code usage data by reading local conversation logs directly."""
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 import argparse
 import json
