@@ -652,27 +652,22 @@ SCRIPT_URL = "https://raw.githubusercontent.com/nhz-io/ccusage-plot/main/ccusage
 
 def _resolve_script_path():
     """Find the real path of this script, resolving symlinks and verifying identity."""
-    # __file__ may be relative, a symlink, or a .pyc — resolve it
+    # resolve() follows symlinks and makes the path absolute
     candidate = Path(__file__).resolve()
 
     # If running via stdin (curl pipe), __file__ won't be a real path
     if not candidate.is_file():
         return None
 
-    # Follow symlinks to the actual file
-    real = candidate
-    while real.is_symlink():
-        real = real.resolve()
-
     # Verify this is actually our script by checking for our version string
     try:
-        content = real.read_text(encoding="utf-8")
+        content = candidate.read_text(encoding="utf-8")
         if f'__version__ = "{__version__}"' not in content:
             return None
     except Exception:
         return None
 
-    return real
+    return candidate
 
 
 def check_update(target_path=None):
@@ -709,9 +704,10 @@ def check_update(target_path=None):
 
     # Update in place
     try:
-        mode = script_path.stat().st_mode
         script_path.write_text(remote_source, encoding="utf-8")
-        script_path.chmod(mode | 0o111)
+        # Set executable bit on Unix (no-op on Windows)
+        if sys.platform != "win32":
+            script_path.chmod(script_path.stat().st_mode | 0o111)
         print(f"Updated: v{__version__} -> v{remote_version}", file=sys.stderr)
     except Exception as e:
         print(f"Error writing update: {e}", file=sys.stderr)
