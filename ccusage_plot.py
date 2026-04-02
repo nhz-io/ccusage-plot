@@ -239,6 +239,23 @@ def resolve_tz(tz_str):
         )
         sys.exit(1)
 
+def get_user_plan():
+    """Read the subscription type from Claude Code credentials file."""
+    creds_path = Path.home() / ".claude" / ".credentials.json"
+    if creds_path.exists():
+        try:
+            with open(creds_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                
+                # Check inside claudeAiOauth
+                if not plan and "claudeAiOauth" in data:
+                    plan = data["claudeAiOauth"].get("subscriptionType")
+                
+                if plan:
+                    return str(plan).upper()
+        except Exception:
+            pass
+    return "Free" # A generic fallback - as Free users can't use the CLI I don't think this is necessary.
 
 HIGHLIGHT_COLOR = "#ffffff"
 HIGHLIGHT_ALPHA = 0.06
@@ -335,12 +352,12 @@ def plot_timeline(events, period_str, output_path, tz=None, highlight=None):
     )
     date_range_str = f"{first_ts.strftime('%b %d %H:%M')} \u2013 {last_ts.strftime('%b %d %H:%M')} {tz_label}"
 
+    # Get the plan name
+    plan_name = get_user_plan()
+
     fig.suptitle(
-        "Claude Code Usage",
-        fontsize=18,
-        fontweight="bold",
-        color="#ffffff",
-        y=0.99,
+        f"Claude Code Usage Dashboard | Plan: {plan_name}",
+        fontsize=18, fontweight="bold", color="#ffffff", y=0.99,
     )
     subtitle_parts = [
         date_range_str,
