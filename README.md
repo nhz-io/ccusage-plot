@@ -29,7 +29,8 @@ python ccusage_plot.py [options]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-p`, `--period` | Time period: `6h`, `3d`, `1w`, `2m`, etc. | all history |
+| `-p`, `--period` | Time period: `6h`, `3d`, `1w`, `2m`, etc. | `24h` |
+| `--all` | Plot all history | off |
 | `--from` | Start date: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` | none |
 | `--to` | End date: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` | none |
 | `-o`, `--output` | Output PNG file path | `ccusage_{period}.png` |
@@ -42,7 +43,8 @@ You can specify what time window to plot in several ways:
 
 | Flags | Meaning |
 |-------|---------|
-| *(none)* | All history |
+| *(none)* | Last 24 hours |
+| `--all` | All history |
 | `-p 7d` | Last 7 days from now |
 | `--from 2025-03-20` | From that date to now |
 | `--from 2025-03-20 --to 2025-03-28` | Explicit date range |
@@ -54,8 +56,11 @@ Dates are parsed in the timezone specified by `--tz` (UTC if omitted).
 ### Examples
 
 ```bash
-# All history (default)
+# Last 24 hours (default)
 python ccusage_plot.py
+
+# All history
+python ccusage_plot.py --all
 
 # Last 7 days in Pacific time
 python ccusage_plot.py -p 7d --tz PST

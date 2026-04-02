@@ -632,7 +632,12 @@ def main():
         "-p",
         "--period",
         default=None,
-        help="Time period, e.g. 6h, 3d, 1w, 2m (default: all history)",
+        help="Time period, e.g. 6h, 3d, 1w, 2m (default: 24h)",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Plot all history",
     )
     parser.add_argument(
         "--from",
@@ -702,11 +707,16 @@ def main():
         start = now - delta
         end = now
         period_label = args.period
-    else:
-        # No parameters: all history
+    elif args.all:
+        # All history
         start = None
         end = None
         period_label = "all"
+    else:
+        # Default: last 24h
+        start = now - timedelta(hours=24)
+        end = now
+        period_label = "24h"
 
     print(f"Reading conversation logs from {PROJECTS_DIR} ...", file=sys.stderr)
     events = load_events(start, end)
