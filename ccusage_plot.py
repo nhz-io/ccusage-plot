@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -123,7 +124,7 @@ def estimate_cost(model, input_t, output_t, cache_create_t, cache_read_t):
     return input_t * pi + output_t * po + cache_create_t * pcc + cache_read_t * pcr
 
 
-def load_events(cutoff, end=None):
+def load_events(cutoff=None, end=None):
     """Read conversation JSONL files and extract assistant message usage data."""
     events = []
     if not PROJECTS_DIR.exists():
@@ -153,7 +154,7 @@ def load_events(cutoff, end=None):
                     else:
                         ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
 
-                    if ts < cutoff:
+                    if cutoff and ts < cutoff:
                         continue
                     if end and ts > end:
                         continue
@@ -258,23 +259,30 @@ def resolve_tz(tz_str):
         )
         sys.exit(1)
 
-def get_user_plan():
-    """Read the subscription type from Claude Code credentials file."""
-    creds_path = Path.home() / ".claude" / ".credentials.json"
-    if creds_path.exists():
-        try:
-            with open(creds_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                
-                # Check inside claudeAiOauth
-                if not plan and "claudeAiOauth" in data:
-                    plan = data["claudeAiOauth"].get("subscriptionType")
-                
-                if plan:
-                    return str(plan).upper()
-        except Exception:
-            pass
-    return "Free" # A generic fallback - as Free users can't use the CLI I don't think this is necessary.
+def get_claude_info():
+    """Get subscription type and version from the claude CLI."""
+    plan = "Unknown"
+    version = ""
+    try:
+        result = subprocess.run(
+            ["claude", "auth", "status"],
+            capture_output=True, text=True, timeout=10,
+        )
+        data = json.loads(result.stdout)
+        p = data.get("subscriptionType", "")
+        if p:
+            plan = str(p).capitalize()
+    except (subprocess.SubprocessError, json.JSONDecodeError, FileNotFoundError):
+        pass
+    try:
+        result = subprocess.run(
+            ["claude", "--version"],
+            capture_output=True, text=True, timeout=10,
+        )
+        version = result.stdout.strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    return plan, version
 
 HIGHLIGHT_COLOR = "#ffffff"
 HIGHLIGHT_ALPHA = 0.06
@@ -371,11 +379,14 @@ def plot_timeline(events, period_str, output_path, tz=None, highlight=None):
     )
     date_range_str = f"{first_ts.strftime('%b %d %H:%M')} \u2013 {last_ts.strftime('%b %d %H:%M')} {tz_label}"
 
-    # Get the plan name
-    plan_name = get_user_plan()
+    # Get plan and version info
+    plan_name, claude_version = get_claude_info()
 
+    title_parts = [f"Claude Code Usage | Plan: {plan_name}"]
+    if claude_version:
+        title_parts.append(f"v{claude_version.split()[0]}")
     fig.suptitle(
-        f"Claude Code Usage Dashboard | Plan: {plan_name}",
+        "  |  ".join(title_parts),
         fontsize=18, fontweight="bold", color="#ffffff", y=0.99,
     )
     subtitle_parts = [
@@ -396,6 +407,33 @@ def plot_timeline(events, period_str, output_path, tz=None, highlight=None):
         color=TEXT_DIM,
     )
 
+    # Determine time span and bin size
+    span_h = (
+        (timestamps[-1] - timestamps[0]).total_seconds() / 3600
+        if len(timestamps) > 1
+        else 1
+    )
+    # Target ~60 bars regardless of time range
+    TARGET_BARS = 120
+    bin_seconds = max(60, span_h * 3600 / TARGET_BARS)
+    # Snap to a clean interval
+    clean_intervals = [
+        (60, "per 1min"), (120, "per 2min"), (300, "per 5min"),
+        (600, "per 10min"), (900, "per 15min"), (1800, "per 30min"),
+        (3600, "per 1h"), (7200, "per 2h"), (14400, "per 4h"),
+        (21600, "per 6h"), (43200, "per 12h"), (86400, "per 1d"),
+        (604800, "per 1w"), (2592000, "per 30d"),
+    ]
+    bin_delta = timedelta(seconds=clean_intervals[-1][0])
+    bin_label = clean_intervals[-1][1]
+    for secs, label in clean_intervals:
+        if secs >= bin_seconds:
+            bin_delta = timedelta(seconds=secs)
+            bin_label = label
+            break
+
+    fmt_tz = tz if tz else timezone.utc
+
     for idx, (title, key, is_currency) in enumerate(CHARTS):
         ax = axes[idx]
         style_axes(ax)
@@ -403,15 +441,27 @@ def plot_timeline(events, period_str, output_path, tz=None, highlight=None):
         values = [e[key] for e in events]
         color = COLORS[key]
 
-        # Scatter for individual requests
-        ax.scatter(
-            timestamps,
-            values,
-            color=color,
-            alpha=0.5,
-            s=12,
-            zorder=3,
-            edgecolors="none",
+        # Bin events into time segments
+        bin_starts = []
+        bin_totals = []
+        bin_start = timestamps[0]
+        bin_sum = 0
+        ts_idx = 0
+        while bin_start <= timestamps[-1]:
+            bin_end = bin_start + bin_delta
+            while ts_idx < len(timestamps) and timestamps[ts_idx] < bin_end:
+                bin_sum += values[ts_idx]
+                ts_idx += 1
+            bin_starts.append(bin_start)
+            bin_totals.append(bin_sum)
+            bin_sum = 0
+            bin_start = bin_end
+
+        # Bar width fills bin with small gap
+        bar_width = bin_delta * 0.9
+        ax.bar(
+            bin_starts, bin_totals,
+            width=bar_width, color=color, alpha=0.3, align="edge", zorder=3,
         )
 
         # Cumulative line on secondary y-axis
@@ -422,8 +472,9 @@ def plot_timeline(events, period_str, output_path, tz=None, highlight=None):
             cumulative.append(running)
 
         ax2 = ax.twinx()
-        ax2.plot(timestamps, cumulative, color=color, alpha=0.8, linewidth=2, zorder=4)
-        ax2.fill_between(timestamps, cumulative, alpha=0.06, color=color, zorder=2)
+        ax2.plot(timestamps, cumulative, color="#ffffff", alpha=0.15, linewidth=4, zorder=4)
+        ax2.plot(timestamps, cumulative, color=color, alpha=1.0, linewidth=2, zorder=5)
+        ax2.fill_between(timestamps, cumulative, alpha=0.04, color=color, zorder=2)
         ax2.yaxis.set_major_formatter(make_formatter(is_currency))
         ax2.tick_params(colors=TEXT_DIM, labelsize=8)
         ax2.spines["right"].set_color(BORDER)
@@ -450,7 +501,7 @@ def plot_timeline(events, period_str, output_path, tz=None, highlight=None):
 
         ax.set_title(title, fontsize=13, fontweight="bold", color=TEXT, pad=10)
         ax.yaxis.set_major_formatter(make_formatter(is_currency))
-        ax.set_ylabel("per call", fontsize=8, color=TEXT_DIM)
+        ax.set_ylabel(bin_label, fontsize=8, color=TEXT_DIM)
         ax2.set_ylabel("cumulative", fontsize=8, color=TEXT_DIM)
         ax.grid(True, alpha=0.2, color=GRID)
 
@@ -458,12 +509,6 @@ def plot_timeline(events, period_str, output_path, tz=None, highlight=None):
             add_highlight_bands(ax, timestamps, highlight[0], highlight[1], tz)
 
         # Adaptive x-axis
-        span_h = (
-            (timestamps[-1] - timestamps[0]).total_seconds() / 3600
-            if len(timestamps) > 1
-            else 1
-        )
-        fmt_tz = tz if tz else timezone.utc
         if span_h <= 6:
             ax.xaxis.set_major_locator(mdates.HourLocator())
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz=fmt_tz))
@@ -587,7 +632,7 @@ def main():
         "-p",
         "--period",
         default=None,
-        help="Time period, e.g. 6h, 3d, 1w, 2m (default: 24h when no --from/--to)",
+        help="Time period, e.g. 6h, 3d, 1w, 2m (default: all history)",
     )
     parser.add_argument(
         "--from",
@@ -651,15 +696,20 @@ def main():
     elif has_to:
         print("Error: --to requires either --from or -p.", file=sys.stderr)
         sys.exit(1)
-    else:
-        # Period back from now (original behavior)
-        delta = parse_period(args.period or "24h")
+    elif has_period:
+        # Period back from now
+        delta = parse_period(args.period)
         start = now - delta
         end = now
-        period_label = args.period or "24h"
+        period_label = args.period
+    else:
+        # No parameters: all history
+        start = None
+        end = None
+        period_label = "all"
 
     print(f"Reading conversation logs from {PROJECTS_DIR} ...", file=sys.stderr)
-    events = load_events(start, end if end != now else None)
+    events = load_events(start, end)
 
     if not events:
         print(f"No API calls found for {period_label}.", file=sys.stderr)

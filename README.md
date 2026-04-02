@@ -2,7 +2,7 @@
 
 A dark-themed CLI tool that visualizes your Claude Code token usage and costs by reading local conversation logs (`~/.claude/projects/**/*.jsonl`).
 
-Generates a PNG dashboard with per-call scatter plots, cumulative lines, cost-by-model breakdown, and token category breakdown.
+Generates a PNG dashboard with per-segment bar charts, cumulative lines, cost-by-model breakdown, and token category breakdown.
 
 ## Quick Start
 
@@ -29,7 +29,7 @@ python ccusage_plot.py [options]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-p`, `--period` | Time period: `6h`, `3d`, `1w`, `2m`, etc. | `24h` |
+| `-p`, `--period` | Time period: `6h`, `3d`, `1w`, `2m`, etc. | all history |
 | `--from` | Start date: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` | none |
 | `--to` | End date: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` | none |
 | `-o`, `--output` | Output PNG file path | `ccusage_{period}.png` |
@@ -42,6 +42,7 @@ You can specify what time window to plot in several ways:
 
 | Flags | Meaning |
 |-------|---------|
+| *(none)* | All history |
 | `-p 7d` | Last 7 days from now |
 | `--from 2025-03-20` | From that date to now |
 | `--from 2025-03-20 --to 2025-03-28` | Explicit date range |
@@ -53,7 +54,7 @@ Dates are parsed in the timezone specified by `--tz` (UTC if omitted).
 ### Examples
 
 ```bash
-# Last 24 hours (default)
+# All history (default)
 python ccusage_plot.py
 
 # Last 7 days in Pacific time
@@ -76,14 +77,16 @@ python ccusage_plot.py -p 3m
 
 The output PNG contains 8 panels:
 
-1. **Input Tokens** — per-call scatter + cumulative line
-2. **Output Tokens** — per-call scatter + cumulative line
-3. **Cache Create Tokens** — per-call scatter + cumulative line
-4. **Cache Read Tokens** — per-call scatter + cumulative line
-5. **Total Tokens** — per-call scatter + cumulative line
-6. **Cost (USD)** — estimated cost per call + cumulative
+1. **Input Tokens** — per-segment bars + cumulative line
+2. **Output Tokens** — per-segment bars + cumulative line
+3. **Cache Create Tokens** — per-segment bars + cumulative line
+4. **Cache Read Tokens** — per-segment bars + cumulative line
+5. **Total Tokens** — per-segment bars + cumulative line
+6. **Cost (USD)** — per-segment bars + cumulative line
 7. **Cost by Model** — horizontal bar chart with per-model totals
 8. **Token Breakdown** — horizontal bar chart by token category
+
+Time segments are auto-sized to maintain consistent bar density (~120 bars), snapping to clean intervals (1min, 5min, 15min, 1h, 4h, 12h, 1d, 1w, 30d).
 
 ## Supported Models
 
