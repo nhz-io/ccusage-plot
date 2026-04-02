@@ -29,10 +29,26 @@ python ccusage_plot.py [options]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-p`, `--period` | Time period to display: `6h`, `3d`, `1w`, `2m`, etc. | `24h` |
+| `-p`, `--period` | Time period: `6h`, `3d`, `1w`, `2m`, etc. | `24h` |
+| `--from` | Start date: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` | none |
+| `--to` | End date: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` | none |
 | `-o`, `--output` | Output PNG file path | `ccusage_{period}.png` |
-| `--tz` | Timezone for x-axis (`PST`, `EST`, `UTC`, `Asia/Tokyo`, etc.) | UTC |
+| `--tz` | Timezone for x-axis and date parsing (`PST`, `EST`, `UTC`, `Asia/Tokyo`, etc.) | UTC |
 | `--highlight` | Highlight a daily time window, e.g. `5-11` or `5:00-11:30` | none |
+
+### Date Range
+
+You can specify what time window to plot in several ways:
+
+| Flags | Meaning |
+|-------|---------|
+| `-p 7d` | Last 7 days from now |
+| `--from 2025-03-20` | From that date to now |
+| `--from 2025-03-20 --to 2025-03-28` | Explicit date range |
+| `--from 2025-03-20 -p 7d` | 7 days starting from March 20 |
+| `--to 2025-03-28 -p 3d` | 3 days ending March 28 |
+
+Dates are parsed in the timezone specified by `--tz` (UTC if omitted).
 
 ### Examples
 
@@ -42,6 +58,12 @@ python ccusage_plot.py
 
 # Last 7 days in Pacific time
 python ccusage_plot.py -p 7d --tz PST
+
+# Specific date range
+python ccusage_plot.py --from 2025-03-20 --to 2025-03-28 --tz EST
+
+# One week starting from a date
+python ccusage_plot.py --from 2025-03-20 -p 1w
 
 # Last 2 weeks, highlight working hours, custom output
 python ccusage_plot.py -p 2w --tz EST --highlight 9-17 -o usage.png

@@ -84,6 +84,23 @@ def parse_period(period_str):
         return timedelta(days=value * 30)
 
 
+def parse_datetime(dt_str, tz=None):
+    """Parse 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM' into a timezone-aware datetime."""
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(dt_str.strip(), fmt)
+            if tz:
+                return dt.replace(tzinfo=tz)
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    print(
+        f"Error: invalid date '{dt_str}'. Use YYYY-MM-DD or 'YYYY-MM-DD HH:MM'",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 # Approximate cost per token by model (USD)
 # input, output, cache_create, cache_read
 MODEL_PRICING = {
@@ -106,7 +123,7 @@ def estimate_cost(model, input_t, output_t, cache_create_t, cache_read_t):
     return input_t * pi + output_t * po + cache_create_t * pcc + cache_read_t * pcr
 
 
-def load_events(cutoff):
+def load_events(cutoff, end=None):
     """Read conversation JSONL files and extract assistant message usage data."""
     events = []
     if not PROJECTS_DIR.exists():
@@ -137,6 +154,8 @@ def load_events(cutoff):
                         ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
 
                     if ts < cutoff:
+                        continue
+                    if end and ts > end:
                         continue
 
                     msg = obj.get("message", {})
@@ -567,8 +586,20 @@ def main():
     parser.add_argument(
         "-p",
         "--period",
-        default="24h",
-        help="Time period to display, e.g. 6h, 3d, 1w, 2m (default: 24h)",
+        default=None,
+        help="Time period, e.g. 6h, 3d, 1w, 2m (default: 24h when no --from/--to)",
+    )
+    parser.add_argument(
+        "--from",
+        dest="date_from",
+        default=None,
+        help="Start date: YYYY-MM-DD or 'YYYY-MM-DD HH:MM'",
+    )
+    parser.add_argument(
+        "--to",
+        dest="date_to",
+        default=None,
+        help="End date: YYYY-MM-DD or 'YYYY-MM-DD HH:MM'",
     )
     parser.add_argument(
         "-o", "--output", help="Output PNG path (default: ccusage_{period}.png)"
@@ -576,7 +607,7 @@ def main():
     parser.add_argument(
         "--tz",
         default=None,
-        help="Timezone for x-axis, e.g. PST, EST, UTC, Asia/Tokyo (default: local)",
+        help="Timezone for x-axis and date parsing, e.g. PST, EST, UTC, Asia/Tokyo",
     )
     parser.add_argument(
         "--highlight",
@@ -585,24 +616,61 @@ def main():
     )
     args = parser.parse_args()
 
-    delta = parse_period(args.period)
-    cutoff = datetime.now(timezone.utc) - delta
-
-    print(f"Reading conversation logs from {PROJECTS_DIR} ...", file=sys.stderr)
-    events = load_events(cutoff)
-
-    if not events:
-        print(f"No API calls found in the past {args.period}.", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Found {len(events)} API calls in the past {args.period}.", file=sys.stderr)
-
     tz = resolve_tz(args.tz) if args.tz else None
 
-    output_path = args.output or f"ccusage_{args.period}.png"
+    # Resolve date range from --from, --to, -p combinations
+    now = datetime.now(timezone.utc)
+    has_from = args.date_from is not None
+    has_to = args.date_to is not None
+    has_period = args.period is not None
+
+    if has_from and has_to and has_period:
+        print("Error: cannot use --from, --to, and -p together.", file=sys.stderr)
+        sys.exit(1)
+
+    if has_from and has_to:
+        # Explicit range
+        start = parse_datetime(args.date_from, tz)
+        end = parse_datetime(args.date_to, tz)
+        period_label = f"{args.date_from}_to_{args.date_to}"
+    elif has_from and has_period:
+        # Start date + period forward
+        start = parse_datetime(args.date_from, tz)
+        end = start + parse_period(args.period)
+        period_label = f"{args.date_from}+{args.period}"
+    elif has_from:
+        # From date to now
+        start = parse_datetime(args.date_from, tz)
+        end = now
+        period_label = f"{args.date_from}_to_now"
+    elif has_to and has_period:
+        # Period ending at date
+        end = parse_datetime(args.date_to, tz)
+        start = end - parse_period(args.period)
+        period_label = f"{args.period}_to_{args.date_to}"
+    elif has_to:
+        print("Error: --to requires either --from or -p.", file=sys.stderr)
+        sys.exit(1)
+    else:
+        # Period back from now (original behavior)
+        delta = parse_period(args.period or "24h")
+        start = now - delta
+        end = now
+        period_label = args.period or "24h"
+
+    print(f"Reading conversation logs from {PROJECTS_DIR} ...", file=sys.stderr)
+    events = load_events(start, end if end != now else None)
+
+    if not events:
+        print(f"No API calls found for {period_label}.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Found {len(events)} API calls for {period_label}.", file=sys.stderr)
+
+    output_path = args.output or f"ccusage_{period_label}.png"
     highlight = parse_highlight(args.highlight) if args.highlight else None
 
-    plot_timeline(events, args.period, output_path, tz=tz, highlight=highlight)
+    plot_timeline(events, period_label, output_path, tz=tz, highlight=highlight)
 
 
 if __name__ == "__main__":
