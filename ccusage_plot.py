@@ -239,6 +239,7 @@ TZ_ALIASES = {
     "BST": "Europe/London",
     "CET": "Europe/Berlin",
     "CEST": "Europe/Berlin",
+    "IDT": "Asia/Jerusalem",
     "IST": "Asia/Kolkata",
     "JST": "Asia/Tokyo",
     "AEST": "Australia/Sydney",
