@@ -2,7 +2,7 @@
 
 A dark-themed CLI tool that visualizes your Claude Code token usage and costs by reading local conversation logs (`~/.claude/projects/**/*.jsonl`).
 
-![demo](demo.png)
+![demo](demo.png?v=2)
 
 ## ⚡ Quick Start
 
