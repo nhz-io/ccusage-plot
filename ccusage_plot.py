@@ -137,11 +137,12 @@ def parse_datetime(dt_str, tz=None):
 # Approximate cost per token by model (USD)
 # input, output, cache_create, cache_read
 MODEL_PRICING = {
-    "claude-opus-4-6": (15 / 1e6, 75 / 1e6, 18.75 / 1e6, 1.5 / 1e6),
-    "claude-opus-4-5-20251101": (15 / 1e6, 75 / 1e6, 18.75 / 1e6, 1.5 / 1e6),
+    "claude-opus-4-7": (5 / 1e6, 25 / 1e6, 6.25 / 1e6, 0.5 / 1e6),
+    "claude-opus-4-6": (5 / 1e6, 25 / 1e6, 6.25 / 1e6, 0.5 / 1e6),
+    "claude-opus-4-5-20251101": (5 / 1e6, 25 / 1e6, 6.25 / 1e6, 0.5 / 1e6),
     "claude-sonnet-4-6": (3 / 1e6, 15 / 1e6, 3.75 / 1e6, 0.3 / 1e6),
     "claude-sonnet-4-5-20250929": (3 / 1e6, 15 / 1e6, 3.75 / 1e6, 0.3 / 1e6),
-    "claude-haiku-4-5-20251001": (0.8 / 1e6, 4 / 1e6, 1 / 1e6, 0.08 / 1e6),
+    "claude-haiku-4-5-20251001": (1 / 1e6, 5 / 1e6, 1.25 / 1e6, 0.1 / 1e6),
 }
 DEFAULT_PRICING = (3 / 1e6, 15 / 1e6, 3.75 / 1e6, 0.3 / 1e6)
 

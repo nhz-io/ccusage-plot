@@ -82,7 +82,7 @@ python ccusage_plot.py -p 3m
 
 ## 🎨 Charts
 
-The output PNG contains 8 panels:
+The output PNG contains 9 panels:
 
 1. **Input Tokens** — per-segment bars + cumulative line
 2. **Output Tokens** — per-segment bars + cumulative line
@@ -92,6 +92,7 @@ The output PNG contains 8 panels:
 6. **Cost (USD)** — per-segment bars + cumulative line
 7. **Cost by Model** — horizontal bar chart with per-model totals
 8. **Token Breakdown** — horizontal bar chart by token category
+9. **Session Burn Rate** — full-width EMA trend lines per token type with model-colored session dots, behavioral shift annotations, rate limit markers, and window boundaries
 
 Time segments are auto-sized to maintain consistent bar density (~120 bars), snapping to clean intervals (1min, 5min, 15min, 1h, 4h, 12h, 1d, 1w, 30d).
 
@@ -99,6 +100,7 @@ Time segments are auto-sized to maintain consistent bar density (~120 bars), sna
 
 Cost estimation uses published pricing for:
 
+- Claude Opus 4.7
 - Claude Opus 4.6
 - Claude Sonnet 4.6
 - Claude Haiku 4.5
