@@ -7,16 +7,19 @@ A dark-themed CLI tool that visualizes your Claude Code token usage and costs by
 ## ⚡ Quick Start
 
 ```bash
-python3 -m pip install matplotlib && curl -s https://raw.githubusercontent.com/nhz-io/ccusage-plot/main/ccusage_plot.py | python3 - -p 7d --tz PST
+python3 -m pip install matplotlib tzdata && curl -s https://raw.githubusercontent.com/nhz-io/ccusage-plot/main/ccusage_plot.py | python3 - -p 7d --tz PST
 ```
 
 ## 📋 Requirements
 
 - Python 3.9+
 - `matplotlib`
+- `tzdata` (Windows only — required when using `--tz`)
 
 ```bash
 pip install matplotlib
+# Windows users who need --tz:
+pip install tzdata
 ```
 
 ## 🚀 Usage

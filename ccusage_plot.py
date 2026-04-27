@@ -277,15 +277,28 @@ TZ_ALIASES = {
 }
 
 
+def _check_tzdata():
+    """Ensure timezone data is available (needed on Windows)."""
+    try:
+        ZoneInfo("UTC")
+    except Exception:
+        print(
+            "Error: timezone database not found. On Windows, install it with:\n"
+            "  pip install tzdata",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def resolve_tz(tz_str):
     """Resolve a timezone string (alias or IANA name) to a ZoneInfo object."""
     if tz_str is None:
         return None
+    _check_tzdata()
     key = tz_str.upper()
-    if key in TZ_ALIASES:
-        return ZoneInfo(TZ_ALIASES[key])
+    iana_key = TZ_ALIASES.get(key, tz_str)
     try:
-        return ZoneInfo(tz_str)
+        return ZoneInfo(iana_key)
     except KeyError:
         print(
             f"Error: unknown timezone '{tz_str}'. Use e.g. PST, EST, UTC, Asia/Tokyo",
