@@ -175,6 +175,15 @@ def load_events(cutoff=None, end=None):
     seen_uuids: set[str] = set()
 
     for path in jsonl_files:
+        # Per-file dedup by requestId. Claude Code splits one logical API
+        # response into N JSONL records (thinking + text + tool_use blocks,
+        # streaming chunks). All N share the same `requestId`; input /
+        # cache_create / cache_read are bit-identical across them; only
+        # `output_tokens` may grow as streaming progresses (intermediate
+        # records report partial counts, the final carries the aggregate).
+        # Take max per usage field — correct for both the identical fields
+        # and the streaming-output case.
+        seen_request_events: dict[str, dict] = {}
         try:
             with open(path, encoding="utf-8") as f:
                 for line in f:
@@ -216,23 +225,39 @@ def load_events(cutoff=None, end=None):
                     cache_create = usage.get("cache_creation_input_tokens", 0) or 0
                     cache_read = usage.get("cache_read_input_tokens", 0) or 0
 
-                    events.append(
-                        {
-                            "timestamp": ts,
-                            "model": model,
-                            "inputTokens": input_t,
-                            "outputTokens": output_t,
-                            "cacheCreateTokens": cache_create,
-                            "cacheReadTokens": cache_read,
-                            "totalTokens": input_t
-                            + output_t
-                            + cache_create
-                            + cache_read,
-                            "costUSD": estimate_cost(
-                                model, input_t, output_t, cache_create, cache_read
-                            ),
-                        }
-                    )
+                    req_id = obj.get("requestId", "")
+                    if req_id and req_id in seen_request_events:
+                        ev = seen_request_events[req_id]
+                        ev["inputTokens"] = max(ev["inputTokens"], input_t)
+                        ev["outputTokens"] = max(ev["outputTokens"], output_t)
+                        ev["cacheCreateTokens"] = max(ev["cacheCreateTokens"], cache_create)
+                        ev["cacheReadTokens"] = max(ev["cacheReadTokens"], cache_read)
+                        ev["totalTokens"] = (
+                            ev["inputTokens"] + ev["outputTokens"]
+                            + ev["cacheCreateTokens"] + ev["cacheReadTokens"]
+                        )
+                        ev["costUSD"] = estimate_cost(
+                            ev["model"],
+                            ev["inputTokens"], ev["outputTokens"],
+                            ev["cacheCreateTokens"], ev["cacheReadTokens"],
+                        )
+                        continue
+
+                    ev = {
+                        "timestamp": ts,
+                        "model": model,
+                        "inputTokens": input_t,
+                        "outputTokens": output_t,
+                        "cacheCreateTokens": cache_create,
+                        "cacheReadTokens": cache_read,
+                        "totalTokens": input_t + output_t + cache_create + cache_read,
+                        "costUSD": estimate_cost(
+                            model, input_t, output_t, cache_create, cache_read
+                        ),
+                    }
+                    if req_id:
+                        seen_request_events[req_id] = ev
+                    events.append(ev)
         except (json.JSONDecodeError, KeyError, OSError):
             continue
 
