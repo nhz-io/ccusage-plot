@@ -167,6 +167,13 @@ def load_events(cutoff=None, end=None):
     jsonl_files = list(PROJECTS_DIR.rglob("*.jsonl"))
     print(f"Scanning {len(jsonl_files)} conversation files...", file=sys.stderr)
 
+    # Cross-file dedup by record uuid. The SAME API call can appear in
+    # multiple jsonls — most commonly a session's main `<uuid>.jsonl` plus
+    # its `data/subagents/agent-*.jsonl` companion — with identical inner
+    # `uuid` but different wrappers. Without this, subagent tokens/cost
+    # double-count. Records without a `uuid` (legacy data) pass through.
+    seen_uuids: set[str] = set()
+
     for path in jsonl_files:
         try:
             with open(path, encoding="utf-8") as f:
@@ -177,6 +184,12 @@ def load_events(cutoff=None, end=None):
                     obj = json.loads(line)
                     if obj.get("type") != "assistant":
                         continue
+
+                    rec_uuid = obj.get("uuid")
+                    if rec_uuid:
+                        if rec_uuid in seen_uuids:
+                            continue
+                        seen_uuids.add(rec_uuid)
 
                     ts_raw = obj.get("timestamp")
                     if not ts_raw:
@@ -471,6 +484,8 @@ def find_window_boundaries(events, window_gap_s=WINDOW_GAP_S):
 def find_limit_hits(events):
     """Scan raw JSONL for rate limit error messages. Uses pre-loaded events' timestamps."""
     limit_hits = []
+    # Cross-file dedup by record uuid; see load_events() for rationale.
+    seen_uuids: set[str] = set()
     for path in PROJECTS_DIR.rglob("*.jsonl"):
         try:
             with open(path, encoding="utf-8") as f:
@@ -481,6 +496,11 @@ def find_limit_hits(events):
                     obj = json.loads(line)
                     if obj.get("type") != "assistant" or not obj.get("isApiErrorMessage"):
                         continue
+                    rec_uuid = obj.get("uuid")
+                    if rec_uuid:
+                        if rec_uuid in seen_uuids:
+                            continue
+                        seen_uuids.add(rec_uuid)
                     ts_raw = obj.get("timestamp")
                     if not ts_raw:
                         continue
