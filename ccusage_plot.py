@@ -169,6 +169,82 @@ MODEL_PRICING = {
 DEFAULT_PRICING = MODEL_PRICING["claude-opus-4-7"]
 
 
+def _close_torn_prefix(prefix):
+    """Best-effort close of a JSON object truncated mid-record.
+
+    Walks `prefix` tracking open quotes, escapes, and brace/bracket
+    nesting. Appends the minimal closing chars needed and retries
+    json.loads. Returns the parsed object on success, None if the
+    prefix is too damaged (cut mid-key, mid-number, mid-escape, etc.)
+    to round-trip.
+    """
+    in_string = False
+    escape = False
+    stack = []
+    for ch in prefix:
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+        else:
+            if ch == '"':
+                in_string = True
+            elif ch in "{[":
+                stack.append(ch)
+            elif ch == "}" and stack and stack[-1] == "{":
+                stack.pop()
+            elif ch == "]" and stack and stack[-1] == "[":
+                stack.pop()
+    closing = []
+    if in_string:
+        closing.append('"')
+    while stack:
+        closing.append("}" if stack.pop() == "{" else "]")
+    candidate = prefix + "".join(closing)
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+
+
+def _iter_json_objects(line):
+    """Yield each decodable top-level JSON object in `line`.
+
+    Tolerates torn writes that concatenate a truncated record with a
+    complete next record (no separator) — observed when Claude Code is
+    killed mid-flush and the next session's first write tacks onto the
+    partial line. On a parse failure, resyncs to the next `{"` boundary
+    and tries `_close_torn_prefix` on the skipped chunk to salvage the
+    truncated header (type / ts / sessionId / partial content). Yields
+    nothing if no complete object can be decoded.
+    """
+    decoder = json.JSONDecoder()
+    pos = 0
+    n = len(line)
+    while pos < n:
+        while pos < n and line[pos].isspace():
+            pos += 1
+        if pos >= n:
+            return
+        try:
+            obj, end = decoder.raw_decode(line, pos)
+        except json.JSONDecodeError:
+            next_open = line.find('{"', pos + 1)
+            if next_open == -1:
+                return
+            closed = _close_torn_prefix(line[pos:next_open])
+            if closed is not None:
+                yield closed
+            pos = next_open
+            continue
+        yield obj
+        pos = end
+
+
 def estimate_cost(model, input_t, output_t, eph5_t, eph1h_t, unsplit_create_t, cache_read_t):
     rates = DEFAULT_PRICING
     for prefix, p in MODEL_PRICING.items():
@@ -212,12 +288,25 @@ def load_events(cutoff=None, end=None):
         # and the streaming-output case.
         seen_request_events: dict[str, dict] = {}
         try:
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
+            f = open(path, encoding="utf-8")
+        except OSError:
+            continue
+        with f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                # Fast path: most lines are exactly one JSON object. Try
+                # the cheap single-decode first; only on failure invoke
+                # the raw_decode loop that tolerates torn-write
+                # concatenations and salvages the truncated prefix.
+                try:
+                    objs = [json.loads(line)]
+                except json.JSONDecodeError:
+                    objs = list(_iter_json_objects(line))
+                    if not objs:
                         continue
-                    obj = json.loads(line)
+                for obj in objs:
                     if obj.get("type") != "assistant":
                         continue
 
@@ -301,8 +390,6 @@ def load_events(cutoff=None, end=None):
                     if req_id:
                         seen_request_events[req_id] = ev
                     events.append(ev)
-        except (json.JSONDecodeError, KeyError, OSError):
-            continue
 
     events.sort(key=lambda e: e["timestamp"])
     return events
@@ -556,12 +643,21 @@ def find_limit_hits(events):
     seen_uuids: set[str] = set()
     for path in PROJECTS_DIR.rglob("*.jsonl"):
         try:
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
+            f = open(path, encoding="utf-8")
+        except OSError:
+            continue
+        with f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    objs = [json.loads(line)]
+                except json.JSONDecodeError:
+                    objs = list(_iter_json_objects(line))
+                    if not objs:
                         continue
-                    obj = json.loads(line)
+                for obj in objs:
                     if obj.get("type") != "assistant" or not obj.get("isApiErrorMessage"):
                         continue
                     rec_uuid = obj.get("uuid")
@@ -582,8 +678,6 @@ def find_limit_hits(events):
                             t = c.get("text", "").lower()
                             if "hit your limit" in t or "rate limit" in t:
                                 limit_hits.append({"ts": ts, "text": c.get("text", "")})
-        except (json.JSONDecodeError, KeyError, OSError):
-            continue
     limit_hits.sort(key=lambda e: e["ts"])
     deduped = []
     for h in limit_hits:
