@@ -134,27 +134,54 @@ def parse_datetime(dt_str, tz=None):
     sys.exit(1)
 
 
-# Approximate cost per token by model (USD)
-# input, output, cache_create, cache_read
+# Approximate cost per MTok by model (USD ex-VAT). Anthropic prompt caching has
+# two write TTLs: 5-minute ephemeral writes are charged at 1.25× base input,
+# 1-hour ephemeral writes at 2× base input. The JSONL carries the split via
+# `usage.cache_creation.ephemeral_5m_input_tokens` /
+# `usage.cache_creation.ephemeral_1h_input_tokens`; tokens that lack the nested
+# split (legacy SDK records) are charged at the 5m rate as a conservative
+# undercount.
+#
+# Model lookup is `startswith()` against the keys in iteration order, so the
+# table MUST be ordered MORE-SPECIFIC-FIRST within each family (opus-4-7 before
+# opus-4, claude-3-5-haiku- before claude-3-haiku-).
 MODEL_PRICING = {
-    "claude-opus-4-7": (5 / 1e6, 25 / 1e6, 6.25 / 1e6, 0.5 / 1e6),
-    "claude-opus-4-6": (5 / 1e6, 25 / 1e6, 6.25 / 1e6, 0.5 / 1e6),
-    "claude-opus-4-5-20251101": (5 / 1e6, 25 / 1e6, 6.25 / 1e6, 0.5 / 1e6),
-    "claude-sonnet-4-6": (3 / 1e6, 15 / 1e6, 3.75 / 1e6, 0.3 / 1e6),
-    "claude-sonnet-4-5-20250929": (3 / 1e6, 15 / 1e6, 3.75 / 1e6, 0.3 / 1e6),
-    "claude-haiku-4-5-20251001": (1 / 1e6, 5 / 1e6, 1.25 / 1e6, 0.1 / 1e6),
+    # 4.x family
+    "claude-opus-4-7":     {"fresh":  5.00, "create_5m":  6.25, "create_1h": 10.00, "read": 0.50, "output": 25.00},
+    "claude-opus-4-6":     {"fresh":  5.00, "create_5m":  6.25, "create_1h": 10.00, "read": 0.50, "output": 25.00},
+    "claude-opus-4-5":     {"fresh":  5.00, "create_5m":  6.25, "create_1h": 10.00, "read": 0.50, "output": 25.00},
+    "claude-opus-4-1":     {"fresh": 15.00, "create_5m": 18.75, "create_1h": 30.00, "read": 1.50, "output": 75.00},
+    "claude-opus-4":       {"fresh": 15.00, "create_5m": 18.75, "create_1h": 30.00, "read": 1.50, "output": 75.00},
+    "claude-sonnet-4-6":   {"fresh":  3.00, "create_5m":  3.75, "create_1h":  6.00, "read": 0.30, "output": 15.00},
+    "claude-sonnet-4-5":   {"fresh":  3.00, "create_5m":  3.75, "create_1h":  6.00, "read": 0.30, "output": 15.00},
+    "claude-sonnet-4":     {"fresh":  3.00, "create_5m":  3.75, "create_1h":  6.00, "read": 0.30, "output": 15.00},
+    "claude-haiku-4-5":    {"fresh":  1.00, "create_5m":  1.25, "create_1h":  2.00, "read": 0.10, "output":  5.00},
+    # 3.x family
+    "claude-3-7-sonnet-":  {"fresh":  3.00, "create_5m":  3.75, "create_1h":  6.00, "read": 0.30, "output": 15.00},
+    "claude-3-5-sonnet-":  {"fresh":  3.00, "create_5m":  3.75, "create_1h":  6.00, "read": 0.30, "output": 15.00},
+    "claude-3-5-haiku-":   {"fresh":  0.80, "create_5m":  1.00, "create_1h":  1.60, "read": 0.08, "output":  4.00},
+    "claude-3-opus-":      {"fresh": 15.00, "create_5m": 18.75, "create_1h": 30.00, "read": 1.50, "output": 75.00},
+    "claude-3-haiku-":     {"fresh":  0.25, "create_5m":  0.30, "create_1h":  0.50, "read": 0.03, "output":  1.25},
 }
-DEFAULT_PRICING = (3 / 1e6, 15 / 1e6, 3.75 / 1e6, 0.3 / 1e6)
+# Default to opus-4-7 rates for unknown models — overcharging a haiku is loud
+# and easy to spot in the cost panel; silently undercharging a future opus
+# variant at sonnet rates would be a quiet 5× miss.
+DEFAULT_PRICING = MODEL_PRICING["claude-opus-4-7"]
 
 
-def estimate_cost(model, input_t, output_t, cache_create_t, cache_read_t):
-    pricing = DEFAULT_PRICING
+def estimate_cost(model, input_t, output_t, eph5_t, eph1h_t, unsplit_create_t, cache_read_t):
+    rates = DEFAULT_PRICING
     for prefix, p in MODEL_PRICING.items():
-        if model and model.startswith(prefix.rsplit("-", 1)[0]):
-            pricing = p
+        if model and model.startswith(prefix):
+            rates = p
             break
-    pi, po, pcc, pcr = pricing
-    return input_t * pi + output_t * po + cache_create_t * pcc + cache_read_t * pcr
+    return (
+        input_t  * rates["fresh"]      / 1e6
+        + output_t * rates["output"]   / 1e6
+        + (eph5_t + unsplit_create_t) * rates["create_5m"] / 1e6
+        + eph1h_t  * rates["create_1h"] / 1e6
+        + cache_read_t * rates["read"] / 1e6
+    )
 
 
 def load_events(cutoff=None, end=None):
@@ -224,6 +251,13 @@ def load_events(cutoff=None, end=None):
                     output_t = usage.get("output_tokens", 0) or 0
                     cache_create = usage.get("cache_creation_input_tokens", 0) or 0
                     cache_read = usage.get("cache_read_input_tokens", 0) or 0
+                    # Nested ephemeral split. Older SDK records may omit it;
+                    # tokens unaccounted for in either bucket are charged at
+                    # the 5m rate as a conservative undercount.
+                    eph = usage.get("cache_creation") or {}
+                    eph5_t = eph.get("ephemeral_5m_input_tokens", 0) or 0
+                    eph1h_t = eph.get("ephemeral_1h_input_tokens", 0) or 0
+                    unsplit_t = max(0, cache_create - eph5_t - eph1h_t)
 
                     req_id = obj.get("requestId", "")
                     if req_id and req_id in seen_request_events:
@@ -232,6 +266,10 @@ def load_events(cutoff=None, end=None):
                         ev["outputTokens"] = max(ev["outputTokens"], output_t)
                         ev["cacheCreateTokens"] = max(ev["cacheCreateTokens"], cache_create)
                         ev["cacheReadTokens"] = max(ev["cacheReadTokens"], cache_read)
+                        ev["eph5Tokens"] = max(ev["eph5Tokens"], eph5_t)
+                        ev["eph1hTokens"] = max(ev["eph1hTokens"], eph1h_t)
+                        ev["unsplitCreateTokens"] = max(0,
+                            ev["cacheCreateTokens"] - ev["eph5Tokens"] - ev["eph1hTokens"])
                         ev["totalTokens"] = (
                             ev["inputTokens"] + ev["outputTokens"]
                             + ev["cacheCreateTokens"] + ev["cacheReadTokens"]
@@ -239,7 +277,8 @@ def load_events(cutoff=None, end=None):
                         ev["costUSD"] = estimate_cost(
                             ev["model"],
                             ev["inputTokens"], ev["outputTokens"],
-                            ev["cacheCreateTokens"], ev["cacheReadTokens"],
+                            ev["eph5Tokens"], ev["eph1hTokens"],
+                            ev["unsplitCreateTokens"], ev["cacheReadTokens"],
                         )
                         continue
 
@@ -250,9 +289,13 @@ def load_events(cutoff=None, end=None):
                         "outputTokens": output_t,
                         "cacheCreateTokens": cache_create,
                         "cacheReadTokens": cache_read,
+                        "eph5Tokens": eph5_t,
+                        "eph1hTokens": eph1h_t,
+                        "unsplitCreateTokens": unsplit_t,
                         "totalTokens": input_t + output_t + cache_create + cache_read,
                         "costUSD": estimate_cost(
-                            model, input_t, output_t, cache_create, cache_read
+                            model, input_t, output_t,
+                            eph5_t, eph1h_t, unsplit_t, cache_read,
                         ),
                     }
                     if req_id:

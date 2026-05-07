@@ -103,12 +103,13 @@ Time segments are auto-sized to maintain consistent bar density (~120 bars), sna
 
 Cost estimation uses published pricing for:
 
-- Claude Opus 4.7
-- Claude Opus 4.6
-- Claude Sonnet 4.6
-- Claude Haiku 4.5
+- **Opus**: 4.7, 4.6, 4.5, 4.1, 4, 3
+- **Sonnet**: 4.6, 4.5, 4, 3.7, 3.5
+- **Haiku**: 4.5, 3.5, 3
 
-Unknown models fall back to Sonnet-tier pricing.
+Cache-write tokens are split into 5-minute and 1-hour TTL buckets (Anthropic charges 1.25× base input for 5m writes vs 2× for 1h writes). The split is read from `usage.cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`; legacy records without the nested split are charged at the cheaper 5m rate as a conservative undercount.
+
+Unknown models fall back to Opus 4.7 pricing — overcharging an unknown haiku is loud and visible in the cost panel; silently undercharging a future opus variant at sonnet rates would be a quiet 5× miss.
 
 ## 📄 License
 
